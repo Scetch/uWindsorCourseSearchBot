@@ -88,7 +88,23 @@ impl Handler {
         };
 
         // TODO: Support selecting terms/semesters
-        let mut courses = index.query("20185", q)?;
+        let mut courses = match index.query("20185", q) {
+            Ok(courses) => courses,
+            Err(e) => {
+                if let Some(e) = e.downcast_ref::<uwin::QueryError>() {
+                    chan.send_message(|m| {
+                            m.content(format!("Query `{}` is invalid.", q))
+                        })
+                        .map_err(SyncFailure::new)?;
+
+                    warn!("{}", e);
+
+                    return Ok(());
+                }
+
+                return Err(e);
+            }
+        };
 
         // Sort the courses in order by code.
         courses.sort_by(|c, other| c.code.cmp(&other.code));

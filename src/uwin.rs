@@ -39,6 +39,10 @@ static BASE_QUERY: &[(&str, &str)] = &[
 #[fail(display = "Error parsing HTML at {}", _0)]
 pub struct ParseError(&'static str);
 
+#[derive(Debug, Fail)]
+#[fail(display = "Query is invalid: {:?}", _0)]
+pub struct QueryError(QueryParserError);
+
 /// Instructor information
 pub struct Instructor {
     pub name: String,
@@ -191,13 +195,11 @@ impl CourseIndex {
 
     /// Returns a list of courses found in the index.
     pub fn query<'a>(&'a self, term: &str, query: &str) -> Result<Vec<CoursePreview<'a>>, Error> {
-        // The query string the user has entered
-
         // The query string the user has entered.
         let default_fields = vec![self.code, self.title, self.description];
         let user_query = QueryParser::for_index(&self.index, default_fields)
             .parse_query(query)
-            .map_err(tantivy::Error::from)?;
+            .map_err(QueryError)?;
 
         // The query for the current term (semester).
         let term_query = TermQuery::new(
