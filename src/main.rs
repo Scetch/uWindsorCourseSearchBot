@@ -10,7 +10,7 @@ extern crate tantivy;
 #[macro_use] extern crate log;
 extern crate flexi_logger;
 
-use std::{ fmt::Write, fs, thread };
+use std::{ fs, thread };
 
 use failure::{ Error, SyncFailure };
 use itertools::Itertools;
@@ -117,67 +117,78 @@ impl Handler {
                     .chars()
                     .take(200)
                     .chain("...\n\n".chars())
-                    .format("");
+                    .join("");
 
-                let instructors = instructors
-                    .into_iter()
-                    .format_with("\n", |ins, f| {
-                        if let Some(url) = ins.directory_url() {
-                            f(&format_args!("[{}]({})", ins.name, url))
-                        } else {
-                            f(&format_args!("{}", ins.name))
-                        }
-                    });
+                let mut fields = vec![];
 
-                let prereqs = prereqs
-                    .into_iter()
-                    .format("\n");
+                if let Some(note) = note {
+                    fields.push(("Note", note, false));
+                }
 
-                let exams = exams
-                    .into_iter()
-                    .format_with("\n", |ex, f| {
-                        f(&format_args!("**{}**", ex.ty))?;
+                fields.push(("Meets", meets, false));
 
-                        if let Some(date) = ex.date {
-                            f(&format_args!(" on {}", date))?;
-                        }
+                if !instructors.is_empty() {
+                    let instructors = instructors
+                        .into_iter()
+                        .format_with("\n", |ins, f| {
+                            if let Some(url) = ins.directory_url() {
+                                f(&format_args!("[{}]({})", ins.name, url))
+                            } else {
+                                f(&format_args!("{}", ins.name))
+                            }
+                        })
+                        .to_string();
 
-                        if let Some(time) = ex.time {
-                            f(&format_args!(" at {}", time))?;
-                        }
+                    fields.push(("Instructors", instructors, true));
+                }
 
-                        if let Some(building) = ex.building {
-                            f(&format_args!(" in {}", building))?;
-                        }
+                fields.push(("Availability", availability, true));
 
-                        if let Some(room) = ex.room {
-                            f(&format_args!(" room {}", room))?;
-                        }
+                if !prereqs.is_empty() {
+                    let prereqs = prereqs
+                        .into_iter()
+                        .join("\n");
 
-                        Ok(())
-                    });
+                    fields.push(("Prerequisites", prereqs, false));
+                }
+
+                if !exams.is_empty() {
+                    let exams = exams
+                        .into_iter()
+                        .format_with("\n", |ex, f| {
+                            f(&format_args!("**{}**", ex.ty))?;
+
+                            if let Some(date) = ex.date {
+                                f(&format_args!(" on {}", date))?;
+                            }
+
+                            if let Some(time) = ex.time {
+                                f(&format_args!(" at {}", time))?;
+                            }
+
+                            if let Some(building) = ex.building {
+                                f(&format_args!(" in {}", building))?;
+                            }
+
+                            if let Some(room) = ex.room {
+                                f(&format_args!(" room {}", room))?;
+                            }
+
+                            Ok(())
+                        })
+                        .to_string();
+
+                    fields.push(("Exams", exams, false));
+                }
 
                 let files = vec![(IMAGE_DATA, "icon.png")];
-                chan.send_files(files, |m| {
-                        m.embed(|e| {
-                            let e = e.color(EMBED_COLOR)
-                                .thumbnail("attachment://icon.png")
-                                .title(title)
-                                .description(description);
-
-                            let e = if let Some(note) = note {
-                                e.field("Note", note, false)
-                            } else {
-                                e
-                            };
-
-                            e.field("Meets", meets, false)
-                                .field("Instructors", instructors, true)
-                                .field("Availability", availability, true)
-                                .field("Prerequisites", prereqs, false)
-                                .field("Exams", exams, false)
-                        })
-                    })
+                chan.send_files(files, |m| m.embed(|e| {
+                        e.color(EMBED_COLOR)
+                            .thumbnail("attachment://icon.png")
+                            .title(title)
+                            .description(description)
+                            .fields(fields)
+                    }))
                     .map_err(SyncFailure::new)?;
             }
             courses => {
