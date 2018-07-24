@@ -101,105 +101,97 @@ impl Handler {
                     .map_err(SyncFailure::new)?;
             }
             [course] => {
-                let course = course.scrape()?;
+                let uwin::Course {
+                    title,
+                    description,
+                    note,
+                    meets,
+                    instructors,
+                    availability,
+                    prereqs,
+                    exams,
+                    ..
+                } = course.scrape()?;
 
-                let title = course.title;
-
-                let description = course.description
+                let description = description
                     .chars()
                     .take(200)
                     .chain("...\n\n".chars())
-                    .collect::<String>();
+                    .format("");
 
-                let mut fields = Vec::new();
+                let instructors = instructors
+                    .into_iter()
+                    .format_with("\n", |ins, f| {
+                        if let Some(url) = ins.directory_url() {
+                            f(&format_args!("[{}]({})", ins.name, url))
+                        } else {
+                            f(&format_args!("{}", ins.name))
+                        }
+                    });
 
-                if let Some(note) = course.note {
-                    fields.push(("Note", note, false));
-                }
+                let prereqs = prereqs
+                    .into_iter()
+                    .format("\n");
 
-                fields.push(("Meets", course.meets, false));
+                let exams = exams
+                    .into_iter()
+                    .format_with("\n", |ex, f| {
+                        f(&format_args!("**{}**", ex.ty))?;
 
-                if course.instructors.len() > 0 {
-                    let instructors = course.instructors
-                        .iter()
-                        .fold(String::new(), |mut s, ins| {
-                            if let Some(url) = ins.directory_url() {
-                                let _ = writeln!(s, "[{}]({})", ins.name, url);
-                            } else {
-                                let _ = writeln!(s, "{}", ins.name);
-                            }
+                        if let Some(date) = ex.date {
+                            f(&format_args!(" on {}", date))?;
+                        }
 
-                            s
-                        });
+                        if let Some(time) = ex.time {
+                            f(&format_args!(" at {}", time))?;
+                        }
 
-                    fields.push(("Instructors", instructors, true));
-                }
+                        if let Some(building) = ex.building {
+                            f(&format_args!(" in {}", building))?;
+                        }
 
-                fields.push(("Availability", course.availability, true));
+                        if let Some(room) = ex.room {
+                            f(&format_args!(" room {}", room))?;
+                        }
 
-                if course.prereqs.len() > 0 {
-                    let prereqs = course.prereqs
-                        .iter()
-                        .join("\n");
-
-                    fields.push(("Prerequisites", prereqs, false));
-                }
-
-                if course.exams.len() > 0 {
-                    let exams = course.exams
-                        .iter()
-                        .fold(String::new(), |mut s, ex| {
-                            let _ = write!(s, "**{}**", ex.ty);
-
-                            if let Some(date) = ex.date.as_ref() {
-                                let _ = write!(s, " on {}", date);
-                            }
-
-                            if let Some(time) = ex.time.as_ref() {
-                                let _ = write!(s, " at {}", time);
-                            }
-
-                            if let Some(building) = ex.building.as_ref() {
-                                let _ = write!(s, " in {}", building);
-                            }
-
-                            if let Some(room) = ex.room.as_ref() {
-                                let _ = write!(s, " room {}", room);
-                            }
-
-                            let _ = writeln!(s);
-
-                            s
-                        });
-
-                    fields.push(("Exams", exams, false));
-                }
+                        Ok(())
+                    });
 
                 let files = vec![(IMAGE_DATA, "icon.png")];
                 chan.send_files(files, |m| {
                         m.embed(|e| {
-                            e.color(EMBED_COLOR)
+                            let e = e.color(EMBED_COLOR)
                                 .thumbnail("attachment://icon.png")
                                 .title(title)
-                                .description(description)
-                                .fields(fields)
+                                .description(description);
+
+                            let e = if let Some(note) = note {
+                                e.field("Note", note, false)
+                            } else {
+                                e
+                            };
+
+                            e.field("Meets", meets, false)
+                                .field("Instructors", instructors, true)
+                                .field("Availability", availability, true)
+                                .field("Prerequisites", prereqs, false)
+                                .field("Exams", exams, false)
                         })
                     })
                     .map_err(SyncFailure::new)?;
             }
             courses => {
-                let (codes, titles) = courses.iter()
-                    .fold((String::new(), String::new()), |mut s, course| {
-                        let _ = writeln!(s.0, "{}", &course.code);
-                        let _ = writeln!(s.1, "{}", &course.title);
-                        s
+                let courses = courses
+                    .iter()
+                    .format_with("\n", |course, f| {
+                        f(&format_args!("`{}` {}", course.code, course.title))
                     });
 
                 chan.send_message(|m| {
                         m.embed(|e| {
                             e.color(EMBED_COLOR)
-                                .field("Course Code", codes, true)
-                                .field("Titles", titles, true)
+                                .title("Top 10 Results")
+                                .description(courses)
                         })
                     })
                     .map_err(SyncFailure::new)?;
@@ -255,20 +247,19 @@ impl Handler {
 
 impl EventHandler for Handler {
     fn message(&self, ctx: Context, msg: Message) {
-        let (cmd, s) = {
-            let len = msg.content
-                .split_whitespace()
-                .next()
-                .map(|s| s.len())
-                .unwrap_or(0);
+        let mut parts = msg.content
+            .split_whitespace();
 
-            msg.content.split_at(len)
+        let cmd = if let Some(cmd) = parts.next() {
+            cmd
+        } else {
+            return;
         };
 
-        let s = s.trim();
+        let args = parts.join(" ");
 
         let cmd = match cmd {
-            "~course" => self.fetch_course(ctx, s, msg.channel_id),
+            "~course" => self.fetch_course(ctx, &args, msg.channel_id),
             "~reindex" => self.reindex(ctx, msg.member()),
             _ => Ok(()),
         };
