@@ -219,7 +219,13 @@ impl Handler {
             if is_admin {
                 // Remove current course index.
                 let mut data = ctx.data.lock();
-                data.remove::<uwin::CourseIndex>();
+
+                let already_reindexing = data.remove::<uwin::CourseIndex>()
+                    .is_none();
+
+                if already_reindexing {
+                    return Ok(());
+                }
 
                 // Rebuild course index in another thread.
                 let shard = ctx.shard;
