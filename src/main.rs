@@ -22,7 +22,7 @@ use serenity::{
     prelude::*,
     model::{
         channel::Message,
-        gateway::Game,
+        gateway::{ Game, Ready },
         guild::Member,
         id::ChannelId,
         permissions::Permissions,
@@ -296,11 +296,8 @@ impl Handler {
                 }
 
                 // Rebuild course index in another thread.
-                let shard = ctx.shard;
                 let data = ctx.data.clone();
                 thread::spawn(move || {
-                    shard.set_game(Some(Game::playing("Reindexing...")));
-
                     fs::remove_dir_all("./index")
                         .expect("Couldn't remove index dir.");
 
@@ -311,8 +308,6 @@ impl Handler {
                         }
                         Err(e) => error!("Error while indexing: {}", e),
                     }
-
-                    shard.set_game(None);
                 });
             }
         }
@@ -322,6 +317,10 @@ impl Handler {
 }
 
 impl EventHandler for Handler {
+    fn ready(&self, ctx: Context, _: Ready) {
+        ctx.shard.set_game(Some(Game::playing("~course -h")));
+    }
+
     fn message(&self, ctx: Context, msg: Message) {
         // Make sure we can send messages in this channel.
         let can_send = msg.channel()
