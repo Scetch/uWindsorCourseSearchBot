@@ -22,7 +22,6 @@ use serenity::{
     prelude::*,
     model::{
         channel::Message,
-        gateway::{ Game, Ready },
         guild::Member,
         id::ChannelId,
         permissions::Permissions,
@@ -317,10 +316,6 @@ impl Handler {
 }
 
 impl EventHandler for Handler {
-    fn ready(&self, ctx: Context, _: Ready) {
-        ctx.shard.set_game(Some(Game::playing("~course -h")));
-    }
-
     fn message(&self, ctx: Context, msg: Message) {
         // Make sure we can send messages in this channel.
         let can_send = msg.channel()
